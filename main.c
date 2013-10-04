@@ -82,7 +82,7 @@ static int parse_scriptSig(const uint8_t *scriptSig, int script_size, uint8_t *s
 
     siglen = scriptSig[0];
     if(siglen >= 0x4c)
-        return 0;  // NYI OP_PUSH more than 0x4c bytes
+        return 0;  // NYI OP_PUSH 0x4c or more bytes
     if(siglen < 7) // 2 + 2*(2+0) + 1
         return 0;
     if((2 + siglen + (int)sizeof(my_pubkey)) > script_size)
@@ -241,7 +241,7 @@ static int tx_get(tx_type txtype) {
         }
     }
     if(txtype == TX_INPUT_SIGNED) {
-        // compute remaining hash and verify
+        // compute remaining hash and verify if signature matches
         SHA256_Update(&ctx, buffptr, buffend - buffptr);
         SHA256_Update(&ctx, hashtype_one, sizeof(hashtype_one));
         SHA256_Final(dig.digest, &ctx);
@@ -249,7 +249,7 @@ static int tx_get(tx_type txtype) {
             return 0;
     }
     if(txtype != TX_MAIN) {
-        // compute hash and check
+        // compute hash and check if the transaction is the same as identified in the main one
         SHA256_Init(&ctx);
         SHA256_Update(&ctx, bigbuff, size);
         double_hash(&ctx, &dig);
