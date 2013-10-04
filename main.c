@@ -107,7 +107,7 @@ static int parse_scriptSig(const uint8_t *scriptSig, int script_size, uint8_t *s
     intlen = scriptSig[4];
     if(intlen > 33)
         return 0;
-    if((6 + intlen) >= siglen)
+    if(6 + intlen >= siglen)
         return 0;
     if(scriptSig[5+intlen] != 0x02) // DER integer
         return 0;
