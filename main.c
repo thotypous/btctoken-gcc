@@ -167,13 +167,22 @@ static int tx_get(tx_type txtype) {
         buffptr += sizeof(uint32_t);
     }
 
-    // compute remaining hash
     if(txtype == TX_MAIN) {
+        // compute remaining hash
         for(j = 0; j < num_in; j++) {
             SHA256_Update(&hash_ctxs[j], buffptr, buffend - buffptr);
             SHA256_Update(&hash_ctxs[j], hashtype_seq, sizeof(hashtype_seq));
             double_hash(&hash_ctxs[j], &hash_to_sign[j]);
         }
+    }
+    else {
+        // compute hash and check
+        sha256_digest dig;
+        SHA256_Init(&ctx);
+        SHA256_Update(&ctx, bigbuff, size);
+        double_hash(ctx, &dig);
+        if(memcmp(&dig, &input_tx_ids[curr_input], sizeof(sha256_digest)))
+            return 0;
     }
 
     // NYI number of transactions represented by more than one byte
