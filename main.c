@@ -5,11 +5,12 @@
 #include "ecdsa.h"
 
 static const uint8_t my_scriptPubKey[] = { 0x19, 0x76, 0xa9, 0x14, 0xb0, 0x7e, 0x16, 0x3b, 0xe6, 0x3d, 0x63, 0x3a, 0xc3, 0xcc, 0x0c, 0x93, 0xeb, 0x85, 0x3b, 0x68, 0x4c, 0xd2, 0x79, 0xcd, 0x88, 0xac };
+static const uint8_t my_pubkey[] = { 0x04, 0x2d, 0x2a, 0x61, 0xff, 0x96, 0x4c, 0x56, 0x66, 0x05, 0xa4, 0xa4, 0xe6, 0x5d, 0xf7, 0x57, 0xb3, 0x13, 0x6b, 0x1c, 0xa5, 0xe3, 0x16, 0x6f, 0xa0, 0x8d, 0x8e, 0x03, 0x97, 0xa3, 0xa1, 0x96, 0xb7, 0x59, 0x97, 0x38, 0x71, 0x18, 0xc7, 0xdf, 0x30, 0x23, 0x5c, 0x4f, 0xa7, 0x6f, 0x61, 0x91, 0x68, 0xd2, 0x74, 0x03, 0x24, 0x70, 0xa2, 0x45, 0x82, 0x32, 0x06, 0x87, 0xb7, 0x20, 0x2b, 0x03, 0x2b };
 
 static const uint8_t null_script[] = { 0x00 };
-static const uint8_t hashtype_seq[] = { 0x01, 0x00, 0x00, 0x00 };
+static const uint8_t hashtype_one[] = { 0x01, 0x00, 0x00, 0x00 };
 
-static uint8_t readbuff[64], writebuff[64];
+static uint8_t readbuff[64];//, writebuff[64];
 static uint8_t bigbuff[65536];
 
 FILE *fp;
@@ -76,6 +77,70 @@ static void double_hash(SHA256_CTX *ctx, sha256_digest *dig) {
     SHA256_Final(dig->digest, ctx);
 }
 
+static int tx_verify_signature(SHA256_CTX *ctx, uint8_t *scriptSig, int script_size) {
+    int siglen, intlen;
+    sha256_digest dig;
+    uint8_t sig[64];
+
+    siglen = scriptSig[0];
+    if(siglen >= 0x4c)
+        return 0;  // NYI OP_PUSH more than 0x4c bytes
+    if(siglen < 7) // 2 + 2*(2+0) + 1
+        return 0;
+    if((2 + siglen + (int)sizeof(my_pubkey)) > script_size)
+        return 0;
+
+    // check hashtype
+    if(scriptSig[siglen] != 0x01)
+        return 0;
+    // check pubkey
+    if(scriptSig[siglen+1] != sizeof(my_pubkey))
+        return 0;  // different length from our pubkey
+    if(memcmp(&scriptSig[siglen+2], my_pubkey, sizeof(my_pubkey)))
+        return 0;  // different from our pubkey
+
+    // check DER
+    if(scriptSig[1] != 0x30)  // DER sequence
+        return 0;
+    if(scriptSig[2] != siglen - 3)
+        return 0;
+    if(scriptSig[3] != 0x02)  // DER integer
+        return 0;
+    intlen = scriptSig[4];
+    if(intlen > 33)
+        return 0;
+    if((4 + intlen + 2) > siglen)
+        return 0;
+    if(scriptSig[5+intlen] != 0x02) // DER integer
+        return 0;
+    if(7 + scriptSig[6+intlen] + intlen != siglen)
+        return 0;
+    if(intlen == 33) {
+        memcpy(&sig[0], &scriptSig[6], 32);
+    }
+    else {
+        memset(&sig[0], 0, 32);
+        memcpy(&sig[32 - intlen], &scriptSig[5], intlen);
+    }
+    scriptSig += 6+intlen;
+    intlen = scriptSig[0];
+    if(intlen > 33)
+        return 0;
+    if(intlen == 33) {
+        memcpy(&sig[32], &scriptSig[2], 32);
+    }
+    else {
+        memset(&sig[32], 0, 32);
+        memcpy(&sig[64 - intlen], &scriptSig[1], intlen);
+    }
+
+    // compute hash
+    SHA256_Update(ctx, hashtype_one, sizeof(hashtype_one));
+    SHA256_Final(dig.digest, ctx);
+
+    return ecdsa_verify(my_pubkey, sig, dig.digest, sizeof(sha256_digest)) == 0;
+}
+
 static int tx_get(tx_type txtype) {
     SHA256_CTX ctx;
     uint8_t *buffptr = bigbuff, *buffend;
@@ -140,12 +205,11 @@ static int tx_get(tx_type txtype) {
             // signing hash for one of the inputs
             SHA256_Update(&ctx, bigbuff, buffptr - bigbuff - 1);
             SHA256_Update(&ctx, my_scriptPubKey, sizeof(my_scriptPubKey));
-            buffptr += script_size;
-            SHA256_Update(&ctx, buffptr, buffend - buffptr);
+            SHA256_Update(&ctx, buffptr + script_size, buffend - buffptr - script_size);
+            if(!tx_verify_signature(&ctx, buffptr, script_size))
+                return 0;
         }
-        else {
-            buffptr += script_size;
-        }
+        buffptr += script_size;
         if(txtype == TX_MAIN) {
             // hash my_scriptPubKey for the current input, and the null script for others
             memcpy(&hash_ctxs[i], &ctx, sizeof(SHA256_CTX));
@@ -171,8 +235,8 @@ static int tx_get(tx_type txtype) {
         // compute remaining hash
         for(j = 0; j < num_in; j++) {
             SHA256_Update(&hash_ctxs[j], buffptr, buffend - buffptr);
-            SHA256_Update(&hash_ctxs[j], hashtype_seq, sizeof(hashtype_seq));
-            double_hash(&hash_ctxs[j], &hash_to_sign[j]);
+            SHA256_Update(&hash_ctxs[j], hashtype_one, sizeof(hashtype_one));
+            SHA256_Final(hash_to_sign[j].digest, &hash_ctxs[j]);
         }
     }
     else {
@@ -180,7 +244,7 @@ static int tx_get(tx_type txtype) {
         sha256_digest dig;
         SHA256_Init(&ctx);
         SHA256_Update(&ctx, bigbuff, size);
-        double_hash(ctx, &dig);
+        double_hash(&ctx, &dig);
         if(memcmp(&dig, &input_tx_ids[curr_input], sizeof(sha256_digest)))
             return 0;
     }
@@ -255,6 +319,8 @@ static int tx_get(tx_type txtype) {
 
 int main() {
     fp = fopen("test.in", "rb");
-    tx_get(TX_MAIN);
+    input_tx_signed = 0;
+    curr_input = 0;
+    tx_get(TX_INPUT_SIGNED);
     return 0;
 }
