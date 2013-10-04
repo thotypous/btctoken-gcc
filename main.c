@@ -77,10 +77,8 @@ static void double_hash(SHA256_CTX *ctx, sha256_digest *dig) {
     SHA256_Final(dig->digest, ctx);
 }
 
-static int tx_verify_signature(SHA256_CTX *ctx, uint8_t *scriptSig, int script_size) {
+static int parse_scriptSig(const uint8_t *scriptSig, int script_size, uint8_t *sig) {
     int siglen, intlen;
-    sha256_digest dig;
-    uint8_t sig[64];
 
     siglen = scriptSig[0];
     if(siglen >= 0x4c)
@@ -134,16 +132,14 @@ static int tx_verify_signature(SHA256_CTX *ctx, uint8_t *scriptSig, int script_s
         memcpy(&sig[64 - intlen], &scriptSig[1], intlen);
     }
 
-    // compute hash
-    SHA256_Update(ctx, hashtype_one, sizeof(hashtype_one));
-    SHA256_Final(dig.digest, ctx);
-
-    return ecdsa_verify(my_pubkey, sig, dig.digest, sizeof(sha256_digest)) == 0;
+    return 1;
 }
 
 static int tx_get(tx_type txtype) {
     SHA256_CTX ctx;
+    sha256_digest dig;
     uint8_t *buffptr = bigbuff, *buffend;
+    uint8_t sig_to_verify[64];
     int i, j, num_in, num_out, size, valid_amount = 0;
 
     size = tx_read();
@@ -153,8 +149,7 @@ static int tx_get(tx_type txtype) {
 
     SHA256_Init(&ctx);
 
-    if(txtype == TX_MAIN) {
-        // other txtypes will be hashed all at the same time
+    if(txtype != TX_INPUT_NOTSIGNED) {
         SHA256_Update(&ctx, buffptr, 5);
     }
 
@@ -181,8 +176,10 @@ static int tx_get(tx_type txtype) {
         // read previous tx and index
         if((buffptr + sizeof(sha256_digest) + sizeof(uint32_t)) >= buffend)
             return 0;
-        if(txtype == TX_MAIN) {
+        if(txtype != TX_INPUT_NOTSIGNED) {
             SHA256_Update(&ctx, buffptr, sizeof(sha256_digest) + sizeof(uint32_t));
+        }
+        if(txtype == TX_MAIN) {
             for(j = 0; j < i; j++)
                 SHA256_Update(&hash_ctxs[j], buffptr, sizeof(sha256_digest) + sizeof(uint32_t));
             uint32_t idx = *(uint32_t *)&buffptr[sizeof(sha256_digest)];
@@ -200,14 +197,17 @@ static int tx_get(tx_type txtype) {
             return 0;
         if((buffptr + script_size) >= buffend)
             return 0;
-        if(txtype == TX_INPUT_SIGNED && i == input_tx_signed) {
+        if(txtype == TX_INPUT_SIGNED) {
             // if we are checking a signed input, only need to compute the
             // signing hash for one of the inputs
-            SHA256_Update(&ctx, bigbuff, buffptr - bigbuff - 1);
-            SHA256_Update(&ctx, my_scriptPubKey, sizeof(my_scriptPubKey));
-            SHA256_Update(&ctx, buffptr + script_size, buffend - buffptr - script_size);
-            if(!tx_verify_signature(&ctx, buffptr, script_size))
-                return 0;
+            if(i == input_tx_signed) {
+                SHA256_Update(&ctx, my_scriptPubKey, sizeof(my_scriptPubKey));
+                if(!parse_scriptSig(buffptr, script_size, sig_to_verify))
+                    return 0;
+            }
+            else {
+                SHA256_Update(&ctx, null_script, sizeof(null_script));
+            }
         }
         buffptr += script_size;
         if(txtype == TX_MAIN) {
@@ -223,8 +223,9 @@ static int tx_get(tx_type txtype) {
             return 0;
         if(*(uint32_t *)buffptr != 0xffffffff)
             return 0;
-        if(txtype == TX_MAIN) {
+        if(txtype != TX_INPUT_NOTSIGNED)
             SHA256_Update(&ctx, buffptr, sizeof(uint32_t));
+        if(txtype == TX_MAIN) {
             for(j = 0; j <= i; j++)
                 SHA256_Update(&hash_ctxs[j], buffptr, sizeof(uint32_t));
         }
@@ -239,9 +240,16 @@ static int tx_get(tx_type txtype) {
             SHA256_Final(hash_to_sign[j].digest, &hash_ctxs[j]);
         }
     }
-    else {
+    if(txtype == TX_INPUT_SIGNED) {
+        // compute remaining hash and verify
+        SHA256_Update(&ctx, buffptr, buffend - buffptr);
+        SHA256_Update(&ctx, hashtype_one, sizeof(hashtype_one));
+        SHA256_Final(dig.digest, &ctx);
+        if(ecdsa_verify(my_pubkey, sig_to_verify, dig.digest, sizeof(sha256_digest)) != 0)
+            return 0;
+    }
+    if(txtype != TX_MAIN) {
         // compute hash and check
-        sha256_digest dig;
         SHA256_Init(&ctx);
         SHA256_Update(&ctx, bigbuff, size);
         double_hash(&ctx, &dig);
