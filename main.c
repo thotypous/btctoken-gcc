@@ -78,7 +78,6 @@ static void double_hash(SHA256_CTX *ctx, sha256_digest *dig) {
 }
 
 static const uint8_t merkle_hdr[] = {'M','e','r','k','l','e','N','o','d','e'};
-
 static int compute_merkle(sha256_digest *dig) {
     SHA256_CTX ctx;
     uint8_t pos;
@@ -273,7 +272,6 @@ static int tx_get(tx_type txtype) {
         SHA256_Final(dig.digest, &ctx);
         if(ecdsa_verify(my_pubkey, sig_to_verify, dig.digest, sizeof(sha256_digest)) != 0)
             return 0;
-        printf("Here\n");
     }
     if(txtype != TX_MAIN) {
         // compute hash and check if the transaction is the same as identified in the main one
