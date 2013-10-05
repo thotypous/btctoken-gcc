@@ -23,15 +23,15 @@ static void HID_bRead() {
     while(!HID_Read());
 }
 
-static const uint8_t rawtx_hdr[] = "RAWTXlen";
+static const uint8_t rawtx_hdr[] = {'R','A','W','T','X','l','e','n'};
 static int tx_read() {
     uint16_t size, i;
     uint8_t *buffptr = bigbuff;
 
     HID_bRead();
-    if(memcmp(readbuff, rawtx_hdr, 8) != 0)
+    if(memcmp(readbuff, rawtx_hdr, sizeof(rawtx_hdr)) != 0)
         return 0;
-    size = *(uint16_t *)&readbuff[8];
+    size = *(uint16_t *)&readbuff[sizeof(rawtx_hdr)];
 
     if(size > sizeof(bigbuff)) // maximum raw transaction size
         return 0;
@@ -75,6 +75,32 @@ static void double_hash(SHA256_CTX *ctx, sha256_digest *dig) {
     SHA256_Init(ctx);
     SHA256_Update(ctx, dig->digest, sizeof(sha256_digest));
     SHA256_Final(dig->digest, ctx);
+}
+
+static const uint8_t merkle_hdr[] = {'M','e','r','k','l','e','N','o','d','e'};
+
+static int compute_merkle(sha256_digest *dig) {
+    SHA256_CTX ctx;
+    uint8_t pos;
+    while(1) {
+        HID_bRead();
+        if(memcmp(readbuff, merkle_hdr, sizeof(merkle_hdr)))
+            return 0;
+        pos = readbuff[sizeof(merkle_hdr)];
+        if(pos == 0xff)
+            return 1;
+        SHA256_Init(&ctx);
+        if(pos == 0) {
+            SHA256_Update(&ctx, dig->digest, sizeof(sha256_digest));
+            SHA256_Update(&ctx, &readbuff[sizeof(merkle_hdr)+1], sizeof(sha256_digest));
+        }
+        else if(pos == 1) {
+            SHA256_Update(&ctx, &readbuff[sizeof(merkle_hdr)+1], sizeof(sha256_digest));
+            SHA256_Update(&ctx, dig->digest, sizeof(sha256_digest));
+        }
+        else return 0;
+        double_hash(&ctx, dig);
+    }
 }
 
 static int parse_scriptSig(const uint8_t *scriptSig, int script_size, uint8_t *sig) {
@@ -247,6 +273,7 @@ static int tx_get(tx_type txtype) {
         SHA256_Final(dig.digest, &ctx);
         if(ecdsa_verify(my_pubkey, sig_to_verify, dig.digest, sizeof(sha256_digest)) != 0)
             return 0;
+        printf("Here\n");
     }
     if(txtype != TX_MAIN) {
         // compute hash and check if the transaction is the same as identified in the main one
@@ -328,7 +355,15 @@ static int tx_get(tx_type txtype) {
 int main() {
     fp = fopen("test.in", "rb");
     input_tx_signed = 0;
-    curr_input = 0;
-    tx_get(TX_INPUT_SIGNED);
+    curr_input = 2;
+    printf("tx_get=%d\n", tx_get(TX_MAIN));
+    printf("tx_get=%d\n", tx_get(TX_INPUT_NOTSIGNED));
+    printf("compute_merkle=%d\n", compute_merkle(&input_tx_ids[curr_input]));
+    {
+        int i;
+        for(i = 31; i >= 0; i--)
+            printf("%02x", input_tx_ids[curr_input].digest[i]);
+        printf("\n");
+    }
     return 0;
 }
