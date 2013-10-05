@@ -79,8 +79,12 @@ for tx_in in raw_tx.inputs:
         print repr((res['merkle'], tx_hash, res['pos']))
         print 'sending headers'
         for i in xrange(6):
-            print repr(verifier.read_header(tx_height+i))
+            hdr = verifier.read_header(tx_height+i)
+            print repr(hdr)
+            print 'raw block hdr:', verifier.header_to_string(hdr)
+            
         print '\n\n'
 
-# get signed transaction from device
+# get signatures from device
+print 'should now get', len(raw_tx.inputs), 'signatures'
 # broadcast to network using wallet.sendtx(Transaction(hex_string))
