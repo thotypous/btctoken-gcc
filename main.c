@@ -363,5 +363,6 @@ int main() {
             printf("%02x", input_tx_ids[curr_input].digest[i]);
         printf("\n");
     }
+    printf("addr = '%s'\n",payment_addr);
     return 0;
 }
