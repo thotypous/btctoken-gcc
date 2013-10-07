@@ -445,18 +445,35 @@ static int tx_get(tx_type txtype) {
 
 int main() {
     fp = fopen("test.in", "rb");
+
     input_tx_signed = 0;
     curr_input = 2;
-    printf("tx_get=%d\n", tx_get(TX_MAIN));
-    printf("addr = '%s'\n",payment_addr);
-    printf("tx_get=%d\n", tx_get(TX_INPUT_NOTSIGNED));
-    printf("compute_merkle=%d\n", compute_merkle(&input_tx_ids[curr_input]));
-    {
-        int i;
-        for(i = 31; i >= 0; i--)
-            printf("%02x", input_tx_ids[curr_input].digest[i]);
-        printf("\n");
-    }
-    printf("retrieve_blocks=%d\n", retrieve_blocks(&input_tx_ids[curr_input]));
+
+    writebuff[1] = '0' + tx_get(TX_MAIN);
+    writebuff[0] = 'A';
+    writebuff[2] = 0;
+    HID_Write(writebuff, sizeof(writebuff));
+
+    memcpy(writebuff, payment_addr, sizeof(payment_addr));
+    HID_Write(writebuff, sizeof(writebuff));
+
+    writebuff[1] = '0' + tx_get(TX_INPUT_NOTSIGNED);
+    writebuff[0] = 'B';
+    writebuff[2] = 0;
+    HID_Write(writebuff, sizeof(writebuff));
+
+    writebuff[1] = '0' + compute_merkle(&input_tx_ids[curr_input]);
+    writebuff[0] = 'C';
+    writebuff[2] = 0;
+    HID_Write(writebuff, sizeof(writebuff));
+
+    memcpy(writebuff, input_tx_ids[curr_input].digest, sizeof(sha256_digest));
+    HID_Write(writebuff, sizeof(writebuff));
+
+    writebuff[1] = '0' + retrieve_blocks(&input_tx_ids[curr_input]);
+    writebuff[0] = 'D';
+    writebuff[2] = 0;
+    HID_Write(writebuff, sizeof(writebuff));
+
     return 0;
 }
