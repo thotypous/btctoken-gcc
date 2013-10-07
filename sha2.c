@@ -304,7 +304,7 @@ void SHA256_Init(SHA256_CTX* context) {
 #if BYTE_ORDER == LITTLE_ENDIAN
 
 #define ROUND256_0_TO_15(a,b,c,d,e,f,g,h)	\
-	REVERSE32(*data++, W256[j]); \
+	REVERSE32(*data_++, W256[j]); \
 	T1 = (h) + Sigma1_256(e) + Ch((e), (f), (g)) + \
              K256[j] + W256[j]; \
 	(d) += T1; \
@@ -316,7 +316,7 @@ void SHA256_Init(SHA256_CTX* context) {
 
 #define ROUND256_0_TO_15(a,b,c,d,e,f,g,h)	\
 	T1 = (h) + Sigma1_256(e) + Ch((e), (f), (g)) + \
-	     K256[j] + (W256[j] = *data++); \
+	     K256[j] + (W256[j] = *data_++); \
 	(d) += T1; \
 	(h) = T1 + Sigma0_256(a) + Maj((a), (b), (c)); \
 	j++
@@ -334,7 +334,7 @@ void SHA256_Init(SHA256_CTX* context) {
 	(h) = T1 + Sigma0_256(a) + Maj((a), (b), (c)); \
 	j++
 
-void SHA256_Transform(SHA256_CTX* context, const sha2_word32* data) {
+void SHA256_Transform(SHA256_CTX* context, const sha2_word32* data_) {
 	sha2_word32	a, b, c, d, e, f, g, h, s0, s1;
 	sha2_word32	T1, *W256;
 	int		j;
@@ -392,7 +392,7 @@ void SHA256_Transform(SHA256_CTX* context, const sha2_word32* data) {
 
 #else /* SHA2_UNROLL_TRANSFORM */
 
-void SHA256_Transform(SHA256_CTX* context, const sha2_word32* data) {
+void SHA256_Transform(SHA256_CTX* context, const sha2_word32* data_) {
 	sha2_word32	a, b, c, d, e, f, g, h, s0, s1;
 	sha2_word32	T1, T2, *W256;
 	int		j;
@@ -413,12 +413,12 @@ void SHA256_Transform(SHA256_CTX* context, const sha2_word32* data) {
 	do {
 #if BYTE_ORDER == LITTLE_ENDIAN
 		/* Copy data while converting to host byte order */
-		REVERSE32(*data++,W256[j]);
+		REVERSE32(*data_++,W256[j]);
 		/* Apply the SHA-256 compression function to update a..h */
 		T1 = h + Sigma1_256(e) + Ch(e, f, g) + K256[j] + W256[j];
 #else /* BYTE_ORDER == LITTLE_ENDIAN */
 		/* Apply the SHA-256 compression function to update a..h with copy */
-		T1 = h + Sigma1_256(e) + Ch(e, f, g) + K256[j] + (W256[j] = *data++);
+		T1 = h + Sigma1_256(e) + Ch(e, f, g) + K256[j] + (W256[j] = *data_++);
 #endif /* BYTE_ORDER == LITTLE_ENDIAN */
 		T2 = Sigma0_256(a) + Maj(a, b, c);
 		h = g;
@@ -472,7 +472,7 @@ void SHA256_Transform(SHA256_CTX* context, const sha2_word32* data) {
 
 #endif /* SHA2_UNROLL_TRANSFORM */
 
-void SHA256_Update(SHA256_CTX* context, const sha2_byte *data, size_t len) {
+void SHA256_Update(SHA256_CTX* context, const sha2_byte *data_, uint32_t len) {
 	unsigned int	freespace, usedspace;
 
 	if (len == 0) {
@@ -487,14 +487,14 @@ void SHA256_Update(SHA256_CTX* context, const sha2_byte *data, size_t len) {
 
 		if (len >= freespace) {
 			/* Fill the buffer completely and process it */
-			MEMCPY_BCOPY(&context->buffer[usedspace], data, freespace);
+			MEMCPY_BCOPY(&context->buffer[usedspace], data_, freespace);
 			context->bitcount += freespace << 3;
 			len -= freespace;
-			data += freespace;
+			data_ += freespace;
 			SHA256_Transform(context, (sha2_word32*)context->buffer);
 		} else {
 			/* The buffer is not yet full */
-			MEMCPY_BCOPY(&context->buffer[usedspace], data, len);
+			MEMCPY_BCOPY(&context->buffer[usedspace], data_, len);
 			context->bitcount += len << 3;
 			/* Clean up: */
 			usedspace = freespace = 0;
@@ -503,14 +503,14 @@ void SHA256_Update(SHA256_CTX* context, const sha2_byte *data, size_t len) {
 	}
 	while (len >= SHA256_BLOCK_LENGTH) {
 		/* Process as many complete blocks as we can */
-		SHA256_Transform(context, (sha2_word32*)data);
+		SHA256_Transform(context, (sha2_word32*)data_);
 		context->bitcount += SHA256_BLOCK_LENGTH << 3;
 		len -= SHA256_BLOCK_LENGTH;
-		data += SHA256_BLOCK_LENGTH;
+		data_ += SHA256_BLOCK_LENGTH;
 	}
 	if (len > 0) {
 		/* There's left-overs, so save 'em */
-		MEMCPY_BCOPY(context->buffer, data, len);
+		MEMCPY_BCOPY(context->buffer, data_, len);
 		context->bitcount += len << 3;
 	}
 	/* Clean up: */
@@ -519,6 +519,7 @@ void SHA256_Update(SHA256_CTX* context, const sha2_byte *data, size_t len) {
 
 void SHA256_Final(sha2_byte digest[], SHA256_CTX* context) {
 	sha2_word32	*d = (sha2_word32*)digest;
+	sha2_word64 *t;
 	unsigned int	usedspace;
 
 	/* If no digest buffer is passed, we don't bother doing this: */
@@ -550,10 +551,10 @@ void SHA256_Final(sha2_byte digest[], SHA256_CTX* context) {
 			MEMSET_BZERO(context->buffer, SHA256_SHORT_BLOCK_LENGTH);
 
 			/* Begin padding with a 1 bit: */
-			*context->buffer = 0x80;
+			context->buffer[0] = 0x80;
 		}
 		/* Set the bit count: */
-		sha2_word64 *t = (sha2_word64 *)&context->buffer[SHA256_SHORT_BLOCK_LENGTH];
+		t = (sha2_word64 *)&context->buffer[SHA256_SHORT_BLOCK_LENGTH];
 		*t = context->bitcount;
 
 		/* Final transform: */
@@ -598,18 +599,18 @@ char *SHA256_End(SHA256_CTX* context, char buffer[]) {
 	return buffer;
 }
 
-void SHA256_Raw(const sha2_byte* data, size_t len, uint8_t digest[SHA256_DIGEST_LENGTH]) {
+void SHA256_Raw(const sha2_byte* data_, uint32_t len, uint8_t digest[SHA256_DIGEST_LENGTH]) {
 	SHA256_CTX	context;
 	SHA256_Init(&context);
-	SHA256_Update(&context, data, len);
+	SHA256_Update(&context, data_, len);
 	SHA256_Final(digest, &context);
 }
 
-char* SHA256_Data(const sha2_byte* data, size_t len, char digest[SHA256_DIGEST_STRING_LENGTH]) {
+char* SHA256_Data(const sha2_byte* data_, uint32_t len, char digest[SHA256_DIGEST_STRING_LENGTH]) {
 	SHA256_CTX	context;
 
 	SHA256_Init(&context);
-	SHA256_Update(&context, data, len);
+	SHA256_Update(&context, data_, len);
 	return SHA256_End(&context, digest);
 }
 
@@ -630,7 +631,7 @@ void SHA512_Init(SHA512_CTX* context) {
 #if BYTE_ORDER == LITTLE_ENDIAN
 
 #define ROUND512_0_TO_15(a,b,c,d,e,f,g,h)	\
-	REVERSE64(*data++, W512[j]); \
+	REVERSE64(*data_++, W512[j]); \
 	T1 = (h) + Sigma1_512(e) + Ch((e), (f), (g)) + \
              K512[j] + W512[j]; \
 	(d) += T1, \
@@ -642,7 +643,7 @@ void SHA512_Init(SHA512_CTX* context) {
 
 #define ROUND512_0_TO_15(a,b,c,d,e,f,g,h)	\
 	T1 = (h) + Sigma1_512(e) + Ch((e), (f), (g)) + \
-             K512[j] + (W512[j] = *data++); \
+             K512[j] + (W512[j] = *data_++); \
 	(d) += T1; \
 	(h) = T1 + Sigma0_512(a) + Maj((a), (b), (c)); \
 	j++
@@ -660,7 +661,7 @@ void SHA512_Init(SHA512_CTX* context) {
 	(h) = T1 + Sigma0_512(a) + Maj((a), (b), (c)); \
 	j++
 
-void SHA512_Transform(SHA512_CTX* context, const sha2_word64* data) {
+void SHA512_Transform(SHA512_CTX* context, const sha2_word64* data_) {
 	sha2_word64	a, b, c, d, e, f, g, h, s0, s1;
 	sha2_word64	T1, *W512 = (sha2_word64*)context->buffer;
 	int		j;
@@ -715,7 +716,7 @@ void SHA512_Transform(SHA512_CTX* context, const sha2_word64* data) {
 
 #else /* SHA2_UNROLL_TRANSFORM */
 
-void SHA512_Transform(SHA512_CTX* context, const sha2_word64* data) {
+void SHA512_Transform(SHA512_CTX* context, const sha2_word64* data_) {
 	sha2_word64	a, b, c, d, e, f, g, h, s0, s1;
 	sha2_word64	T1, T2, *W512 = (sha2_word64*)context->buffer;
 	int		j;
@@ -734,12 +735,12 @@ void SHA512_Transform(SHA512_CTX* context, const sha2_word64* data) {
 	do {
 #if BYTE_ORDER == LITTLE_ENDIAN
 		/* Convert TO host byte order */
-		REVERSE64(*data++, W512[j]);
+		REVERSE64(*data_++, W512[j]);
 		/* Apply the SHA-512 compression function to update a..h */
 		T1 = h + Sigma1_512(e) + Ch(e, f, g) + K512[j] + W512[j];
 #else /* BYTE_ORDER == LITTLE_ENDIAN */
 		/* Apply the SHA-512 compression function to update a..h with copy */
-		T1 = h + Sigma1_512(e) + Ch(e, f, g) + K512[j] + (W512[j] = *data++);
+		T1 = h + Sigma1_512(e) + Ch(e, f, g) + K512[j] + (W512[j] = *data_++);
 #endif /* BYTE_ORDER == LITTLE_ENDIAN */
 		T2 = Sigma0_512(a) + Maj(a, b, c);
 		h = g;
@@ -793,7 +794,7 @@ void SHA512_Transform(SHA512_CTX* context, const sha2_word64* data) {
 
 #endif /* SHA2_UNROLL_TRANSFORM */
 
-void SHA512_Update(SHA512_CTX* context, const sha2_byte *data, size_t len) {
+void SHA512_Update(SHA512_CTX* context, const sha2_byte *data_, uint32_t len) {
 	unsigned int	freespace, usedspace;
 
 	if (len == 0) {
@@ -808,14 +809,14 @@ void SHA512_Update(SHA512_CTX* context, const sha2_byte *data, size_t len) {
 
 		if (len >= freespace) {
 			/* Fill the buffer completely and process it */
-			MEMCPY_BCOPY(&context->buffer[usedspace], data, freespace);
+			MEMCPY_BCOPY(&context->buffer[usedspace], data_, freespace);
 			ADDINC128(context->bitcount, freespace << 3);
 			len -= freespace;
-			data += freespace;
+			data_ += freespace;
 			SHA512_Transform(context, (sha2_word64*)context->buffer);
 		} else {
 			/* The buffer is not yet full */
-			MEMCPY_BCOPY(&context->buffer[usedspace], data, len);
+			MEMCPY_BCOPY(&context->buffer[usedspace], data_, len);
 			ADDINC128(context->bitcount, len << 3);
 			/* Clean up: */
 			usedspace = freespace = 0;
@@ -824,14 +825,14 @@ void SHA512_Update(SHA512_CTX* context, const sha2_byte *data, size_t len) {
 	}
 	while (len >= SHA512_BLOCK_LENGTH) {
 		/* Process as many complete blocks as we can */
-		SHA512_Transform(context, (sha2_word64*)data);
+		SHA512_Transform(context, (sha2_word64*)data_);
 		ADDINC128(context->bitcount, SHA512_BLOCK_LENGTH << 3);
 		len -= SHA512_BLOCK_LENGTH;
-		data += SHA512_BLOCK_LENGTH;
+		data_ += SHA512_BLOCK_LENGTH;
 	}
 	if (len > 0) {
 		/* There's left-overs, so save 'em */
-		MEMCPY_BCOPY(context->buffer, data, len);
+		MEMCPY_BCOPY(context->buffer, data_, len);
 		ADDINC128(context->bitcount, len << 3);
 	}
 	/* Clean up: */
@@ -840,6 +841,7 @@ void SHA512_Update(SHA512_CTX* context, const sha2_byte *data, size_t len) {
 
 void SHA512_Last(SHA512_CTX* context) {
 	unsigned int	usedspace;
+	sha2_word64 *t;
 
 	usedspace = (context->bitcount[0] >> 3) % SHA512_BLOCK_LENGTH;
 #if BYTE_ORDER == LITTLE_ENDIAN
@@ -869,10 +871,9 @@ void SHA512_Last(SHA512_CTX* context) {
 		MEMSET_BZERO(context->buffer, SHA512_SHORT_BLOCK_LENGTH);
 
 		/* Begin padding with a 1 bit: */
-		*context->buffer = 0x80;
+		context->buffer[0] = 0x80;
 	}
 	/* Store the length of input data (in bits): */
-	sha2_word64 *t;
 	t = (sha2_word64 *)&context->buffer[SHA512_SHORT_BLOCK_LENGTH];
 	*t = context->bitcount[1];
 	t = (sha2_word64 *)&context->buffer[SHA512_SHORT_BLOCK_LENGTH+8];
@@ -928,17 +929,17 @@ char *SHA512_End(SHA512_CTX* context, char buffer[]) {
 	return buffer;
 }
 
-void SHA512_Raw(const sha2_byte* data, size_t len, uint8_t digest[SHA512_DIGEST_LENGTH]) {
+void SHA512_Raw(const sha2_byte* data_, uint32_t len, uint8_t digest[SHA512_DIGEST_LENGTH]) {
 	SHA512_CTX	context;
 	SHA512_Init(&context);
-	SHA512_Update(&context, data, len);
+	SHA512_Update(&context, data_, len);
 	SHA512_Final(digest, &context);
 }
 
-char* SHA512_Data(const sha2_byte* data, size_t len, char digest[SHA512_DIGEST_STRING_LENGTH]) {
+char* SHA512_Data(const sha2_byte* data_, uint32_t len, char digest[SHA512_DIGEST_STRING_LENGTH]) {
 	SHA512_CTX	context;
 
 	SHA512_Init(&context);
-	SHA512_Update(&context, data, len);
+	SHA512_Update(&context, data_, len);
 	return SHA512_End(&context, digest);
 }

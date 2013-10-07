@@ -1,7 +1,11 @@
-#include <stdio.h>
 #include <math.h>
 #include <string.h>
-#include "types.h"
+#include <stdint.h>
+
+#ifndef __MIKROC_PRO_FOR_ARM__
+#include <stdio.h>
+#endif
+
 #include "sha2.h"
 #include "ecdsa.h"
 
@@ -20,6 +24,7 @@ static const uint8_t hashtype_one[] = { 0x01, 0x00, 0x00, 0x00 };
 static uint8_t readbuff[64], writebuff[64];
 static uint8_t bigbuff[65536];
 
+#ifndef __MIKROC_PRO_FOR_ARM__
 FILE *fp;
 int HID_Read() {
     fread(readbuff, sizeof(readbuff), 1, fp);
@@ -31,8 +36,13 @@ int HID_Write(const uint8_t *buf, int len) {
     puts("");
     return 1;
 }
+#else
+void USB1Interrupt() iv IVT_INT_OTG_FS {
+    USB_Interrupt_Proc();
+}
+#endif
 
-static void HID_bRead() {
+static inline void HID_bRead() {
     while(!HID_Read());
 }
 
@@ -298,11 +308,11 @@ static int tx_get(tx_type txtype) {
             SHA256_Update(&ctx, buffptr, sizeof(sha256_digest) + sizeof(uint32_t));
         }
         if(txtype == TX_MAIN) {
-            for(j = 0; j < i; j++)
-                SHA256_Update(&hash_ctxs[j], buffptr, sizeof(sha256_digest) + sizeof(uint32_t));
             uint32_t idx = *(uint32_t *)&buffptr[sizeof(sha256_digest)];
             if(idx >= 0xfd)
                 return 0;
+            for(j = 0; j < i; j++)
+                SHA256_Update(&hash_ctxs[j], buffptr, sizeof(sha256_digest) + sizeof(uint32_t));
             memcpy(&input_tx_ids[i].digest, buffptr, sizeof(sha256_digest));
             input_tx_idxs[i] = idx;
         }
@@ -444,7 +454,12 @@ static int tx_get(tx_type txtype) {
 }
 
 int main() {
+#ifndef __MIKROC_PRO_FOR_ARM__
     fp = fopen("test.in", "rb");
+#else
+    NVIC_IntEnable(IVT_INT_OTG_FS);
+    HID_Enable(readbuff, writebuff);
+#endif
 
     input_tx_signed = 0;
     curr_input = 2;

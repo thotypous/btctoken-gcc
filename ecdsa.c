@@ -26,11 +26,14 @@
 #include <string.h>
 
 #include "bignum.h"
-#include "rand.h"
 #include "sha2.h"
 #include "ripemd160.h"
 #include "hmac.h"
 #include "ecdsa.h"
+
+#if ! USE_RFC6979
+#include "rand.h"
+#endif
 
 // cp2 = cp1 + cp2
 void point_add(const curve_point *cp1, curve_point *cp2)
@@ -135,6 +138,7 @@ void scalar_multiply(bignum256 *k, curve_point *res)
 	bn_mod(&(res->y), &prime256k1);
 }
 
+#if ! USE_RFC6979
 // generate random K for signing
 int generate_k_random(bignum256 *k) {
 	int i, j;
@@ -151,13 +155,14 @@ int generate_k_random(bignum256 *k) {
 	// we generated 10000 numbers, none of them is good -> fail
 	return 1;
 }
-
+#else
 // generate K in a deterministic way, according to RFC6979
 // http://tools.ietf.org/html/rfc6979
 int generate_k_rfc6979(bignum256 *secret, const uint8_t *priv_key, const uint8_t *hash)
 {
 	int i;
-	uint8_t v[32], k[32], bx[2*32], buf[32 + 1 + sizeof(bx)], t[32];
+	uint8_t v[32], k[32], bx[2*32];
+	uint8_t buf[32 + 1 + sizeof(bx)], t[32];
 	bignum256 z1;
 
 	memcpy(bx, priv_key, 32);
@@ -194,6 +199,7 @@ int generate_k_rfc6979(bignum256 *secret, const uint8_t *priv_key, const uint8_t
 	// we generated 10000 numbers, none of them is good -> fail
 	return 1;
 }
+#endif
 
 // uses secp256k1 curve
 // priv_key is a 32 byte big endian stored number
@@ -288,9 +294,10 @@ void ecdsa_get_public_key65(const uint8_t *priv_key, uint8_t *pub_key)
 	bn_write_be(&R.y, pub_key + 33);
 }
 
+static const char code_[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
 void ecdsa_get_address(const uint8_t *pub_key, char version, char *addr)
 {
-	const char code[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 	char *p = addr, s;
 	uint8_t a[32], b[21];
 	uint32_t r;
@@ -312,7 +319,7 @@ void ecdsa_get_address(const uint8_t *pub_key, char version, char *addr)
 
 	while (!bn_is_zero(&c)) {
 		bn_divmod58(&c, &r);
-		*p = code[r];
+		*p = code_[r];
 		p++;
 	}
 
@@ -336,7 +343,6 @@ void ecdsa_get_address(const uint8_t *pub_key, char version, char *addr)
 // addr (35 bytes)
 void ecdsa_get_address_from_ripemd(const uint8_t *b, char *addr)
 {
-    const char code[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
     char *p = addr, s;
     uint8_t a[32];
     uint32_t r;
@@ -354,7 +360,7 @@ void ecdsa_get_address_from_ripemd(const uint8_t *b, char *addr)
 
     while (!bn_is_zero(&c)) {
         bn_divmod58(&c, &r);
-        *p = code[r];
+        *p = code_[r];
         p++;
     }
 
