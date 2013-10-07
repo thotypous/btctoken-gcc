@@ -191,6 +191,7 @@ static int retrieve_blocks(sha256_digest *merkle) {
         // Ask for more blocks
         memcpy(writebuff, blkhdr_moredata, sizeof(blkhdr_moredata));
         HID_Write(writebuff, sizeof(writebuff));
+        first = 0;
     }
 }
 
