@@ -77,7 +77,7 @@ for tx_in in raw_tx.inputs:
         res = interface.synchronous_get([ ('blockchain.transaction.get_merkle',[tx_hash,tx_height]) ])[0]
         print 'sending merkle tree'
         print repr((res['merkle'], tx_hash, res['pos']))
-        print 'sending headers'
+        print 'sending headers starting from blk %d' % tx_height
         for i in xrange(6):
             hdr = verifier.read_header(tx_height+i)
             print repr(hdr)
