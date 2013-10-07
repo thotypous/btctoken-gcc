@@ -46,6 +46,10 @@ static inline void HID_bRead() {
     while(!HID_Read());
 }
 
+static inline void HID_bWrite() {
+    while(!HID_Write(writebuff, sizeof(writebuff)));
+}
+
 static const uint8_t rawtx_hdr[] = {'R','A','W','T','X','l','e','n'};
 static int tx_read() {
     uint16_t size, i;
@@ -195,12 +199,12 @@ static int retrieve_blocks(sha256_digest *merkle) {
         proofWork += exp(185.892521432 - 5.5451774445*(float)e - log((float)b) - proofSecLevel);
         if(proofWork >= 1.0) {
             memcpy(writebuff, blkhdr_trusted, sizeof(blkhdr_trusted));
-            HID_Write(writebuff, sizeof(writebuff));
+            HID_bWrite();
             return 1;
         }
         // Ask for more blocks
         memcpy(writebuff, blkhdr_moredata, sizeof(blkhdr_moredata));
-        HID_Write(writebuff, sizeof(writebuff));
+        HID_bWrite();
         first = 0;
     }
 }
@@ -404,7 +408,7 @@ static int tx_get(tx_type txtype) {
         return 0;
 
     for(i = 0; i < num_out; i++) {
-        uint64_t amount = *(uint64_t *)buffptr;
+        uint64_t amount = ((uint32_t *)buffptr)[0] | ((uint64_t)((uint32_t *)buffptr)[1] << 32);
         buffptr += sizeof(uint64_t);
         // check if this is a standard bitcoin address based scriptPubKey
         if(memcmp(buffptr, my_scriptPubKey, 4) || memcmp(&buffptr[24], &my_scriptPubKey[24], 2))
@@ -467,28 +471,28 @@ int main() {
     writebuff[1] = '0' + tx_get(TX_MAIN);
     writebuff[0] = 'A';
     writebuff[2] = 0;
-    HID_Write(writebuff, sizeof(writebuff));
+    HID_bWrite();
 
     memcpy(writebuff, payment_addr, sizeof(payment_addr));
-    HID_Write(writebuff, sizeof(writebuff));
+    HID_bWrite();
 
     writebuff[1] = '0' + tx_get(TX_INPUT_NOTSIGNED);
     writebuff[0] = 'B';
     writebuff[2] = 0;
-    HID_Write(writebuff, sizeof(writebuff));
+    HID_bWrite();
 
     writebuff[1] = '0' + compute_merkle(&input_tx_ids[curr_input]);
     writebuff[0] = 'C';
     writebuff[2] = 0;
-    HID_Write(writebuff, sizeof(writebuff));
+    HID_bWrite();
 
     memcpy(writebuff, input_tx_ids[curr_input].digest, sizeof(sha256_digest));
-    HID_Write(writebuff, sizeof(writebuff));
+    HID_bWrite();
 
     writebuff[1] = '0' + retrieve_blocks(&input_tx_ids[curr_input]);
     writebuff[0] = 'D';
     writebuff[2] = 0;
-    HID_Write(writebuff, sizeof(writebuff));
+    HID_bWrite();
 
     return 0;
 }
