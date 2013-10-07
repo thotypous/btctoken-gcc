@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 #include "types.h"
 #include "sha2.h"
@@ -7,15 +8,27 @@
 static const uint8_t my_scriptPubKey[] = { 0x19, 0x76, 0xa9, 0x14, 0xb0, 0x7e, 0x16, 0x3b, 0xe6, 0x3d, 0x63, 0x3a, 0xc3, 0xcc, 0x0c, 0x93, 0xeb, 0x85, 0x3b, 0x68, 0x4c, 0xd2, 0x79, 0xcd, 0x88, 0xac };
 static const uint8_t my_pubkey[] = { 0x04, 0x2d, 0x2a, 0x61, 0xff, 0x96, 0x4c, 0x56, 0x66, 0x05, 0xa4, 0xa4, 0xe6, 0x5d, 0xf7, 0x57, 0xb3, 0x13, 0x6b, 0x1c, 0xa5, 0xe3, 0x16, 0x6f, 0xa0, 0x8d, 0x8e, 0x03, 0x97, 0xa3, 0xa1, 0x96, 0xb7, 0x59, 0x97, 0x38, 0x71, 0x18, 0xc7, 0xdf, 0x30, 0x23, 0x5c, 0x4f, 0xa7, 0x6f, 0x61, 0x91, 0x68, 0xd2, 0x74, 0x03, 0x24, 0x70, 0xa2, 0x45, 0x82, 0x32, 0x06, 0x87, 0xb7, 0x20, 0x2b, 0x03, 0x2b };
 
+// Proof-of-work security level required to trust a block chain
+// (natural logarithm of the value of a hashrate (H/s) times hour).
+// If the logarithm of the current hashrate of the network is
+// configured, we will require 6 blocks (6 * 10min = 60min = 1h).
+static const float proofSecLevel = 34.875248631531896;  // log(1.4e15)
+
 static const uint8_t null_script[] = { 0x00 };
 static const uint8_t hashtype_one[] = { 0x01, 0x00, 0x00, 0x00 };
 
-static uint8_t readbuff[64];//, writebuff[64];
+static uint8_t readbuff[64], writebuff[64];
 static uint8_t bigbuff[65536];
 
 FILE *fp;
 int HID_Read() {
     fread(readbuff, sizeof(readbuff), 1, fp);
+    return 1;
+}
+
+int HID_Write(const uint8_t *buf, int len) {
+    fwrite(buf, len, 1, stdout);
+    puts("");
     return 1;
 }
 
@@ -99,6 +112,85 @@ static int compute_merkle(sha256_digest *dig) {
         }
         else return 0;
         double_hash(&ctx, dig);
+    }
+}
+
+static int hash_valid(int32_t e, int32_t b, uint8_t *H) {
+    int i, j;
+    if(e >= 3) {
+        e -= 3;
+    }
+    else {
+        b >>= (3-e)<<3;
+        e = 0;
+    }
+    for(i = 31; i >= e+4; --i)
+        if(H[i] != 0)
+            return 0;
+    j = 3;
+    for(i = e+3; i >= e; --i) {
+        uint8_t bb = (b >> (j<<3)) & 0xff; --j;
+        if(H[i] < bb)
+            return 1;
+        if(H[i] > bb)
+            return 0;
+    }
+    for(i = e-1; i >= 0; --i)
+        if(H[i] != 0)
+            return 0;
+    return 1;
+}
+
+static const uint8_t blkhdr_hdr1[] = {'B', 'l', 'k', '1'};
+static const uint8_t blkhdr_hdr2[] = {'B', 'l', 'k', '2'};
+static const uint8_t blkhdr_moredata[] = "MoreData";
+static const uint8_t blkhdr_trusted[] = "Trusted";
+
+static int retrieve_blocks(sha256_digest *merkle) {
+    SHA256_CTX ctx;
+    sha256_digest blkhash;
+    int first = 1;
+    uint32_t bits;
+    int32_t e, b;
+    float proofWork = 0.;
+    while(1) {
+        // Read the first part of the block (Version + hashPrevBlock)
+        HID_bRead();
+        if(memcmp(readbuff, blkhdr_hdr1, sizeof(blkhdr_hdr1)))
+            return 0;
+        // Check hashPrevBlock
+        if(!first && memcmp(&readbuff[sizeof(blkhdr_hdr1) + sizeof(uint32_t)],
+                            blkhash.digest, sizeof(sha256_digest)))
+            return 0;
+        // Compute hash of the first part
+        SHA256_Init(&ctx);
+        SHA256_Update(&ctx, &readbuff[sizeof(blkhdr_hdr1)], sizeof(uint32_t) + sizeof(sha256_digest));
+        // Read the second part of the block (hashMerkleRoot + Time + Bits + Nonce)
+        HID_bRead();
+        if(memcmp(readbuff, blkhdr_hdr2, sizeof(blkhdr_hdr2)))
+            return 0;
+        // Check hashMerkleRoot (if this is the first block of the chain)
+        if(first && memcmp(&readbuff[sizeof(blkhdr_hdr2)], merkle->digest, sizeof(sha256_digest)))
+            return 0;
+        // Finalize the hash
+        SHA256_Update(&ctx, &readbuff[sizeof(blkhdr_hdr2)], sizeof(sha256_digest) + 3*sizeof(uint32_t));
+        double_hash(&ctx, &blkhash);
+        // Check the bits field
+        bits = *(uint32_t *)&readbuff[sizeof(blkhdr_hdr2) + sizeof(sha256_digest) + sizeof(uint32_t)];
+        b = bits & 0xffffff;
+        e = (bits >> 24) & 0xff;
+        if(!hash_valid(e, b, blkhash.digest))
+            return 0;
+        // Increment proof of work counter
+        proofWork += exp(185.892521432 - 5.5451774445*(float)e - log((float)b) - proofSecLevel);
+        if(proofWork >= 1.0) {
+            memcpy(writebuff, blkhdr_trusted, sizeof(blkhdr_trusted));
+            HID_Write(writebuff, sizeof(writebuff));
+            return 1;
+        }
+        // Ask for more blocks
+        memcpy(writebuff, blkhdr_moredata, sizeof(blkhdr_moredata));
+        HID_Write(writebuff, sizeof(writebuff));
     }
 }
 
@@ -355,6 +447,7 @@ int main() {
     input_tx_signed = 0;
     curr_input = 2;
     printf("tx_get=%d\n", tx_get(TX_MAIN));
+    printf("addr = '%s'\n",payment_addr);
     printf("tx_get=%d\n", tx_get(TX_INPUT_NOTSIGNED));
     printf("compute_merkle=%d\n", compute_merkle(&input_tx_ids[curr_input]));
     {
@@ -363,6 +456,6 @@ int main() {
             printf("%02x", input_tx_ids[curr_input].digest[i]);
         printf("\n");
     }
-    printf("addr = '%s'\n",payment_addr);
+    printf("retrieve_blocks=%d\n", retrieve_blocks(&input_tx_ids[curr_input]));
     return 0;
 }
