@@ -26,20 +26,20 @@
 #include "bignum.h"
 #include "secp256k1.h"
 
-inline uint32_t read_be(const uint8_t *data_)
+inline uint32_t read_be(const uint8_t *data)
 {
-	return (((uint32_t)data_[0]) << 24) |
-	       (((uint32_t)data_[1]) << 16) |
-	       (((uint32_t)data_[2]) << 8)  |
-	       (((uint32_t)data_[3]));
+	return (((uint32_t)data[0]) << 24) |
+	       (((uint32_t)data[1]) << 16) |
+	       (((uint32_t)data[2]) << 8)  |
+	       (((uint32_t)data[3]));
 }
 
-inline void write_be(uint8_t *data_, uint32_t x)
+inline void write_be(uint8_t *data, uint32_t x)
 {
-	data_[0] = x >> 24;
-	data_[1] = x >> 16;
-	data_[2] = x >> 8;
-	data_[3] = x;
+	data[0] = x >> 24;
+	data[1] = x >> 16;
+	data[2] = x >> 8;
+	data[3] = x;
 }
 
 void bn_read_be(const uint8_t *in_number, bignum256 *out_number)
@@ -273,7 +273,6 @@ void bn_inverse(bignum256 *x, const bignum256 *prime)
 {
 	int i, j, k, len1, len2, mask;
 	uint32_t u[9], v[9], s[10], r[10], temp, temp2;
-	int done = 0;
 	bn_fast_mod(x, prime);
 	bn_mod(x, prime);
 	for (i = 0; i < 9; i++) {
@@ -405,6 +404,7 @@ void bn_inverse(bignum256 *x, const bignum256 *prime)
 		r[i] = temp & 0x3FFFFFFF;
 		temp >>= 30;
 	}
+	int done = 0;
 #if USE_PRECOMPUTED_IV
 	if (prime == &prime256k1) {
 		for (j = 0; j < 9; j++) {

@@ -161,8 +161,7 @@ int generate_k_random(bignum256 *k) {
 int generate_k_rfc6979(bignum256 *secret, const uint8_t *priv_key, const uint8_t *hash)
 {
 	int i;
-	uint8_t v[32], k[32], bx[2*32];
-	uint8_t buf[32 + 1 + sizeof(bx)], t[32];
+	uint8_t v[32], k[32], bx[2*32], buf[32 + 1 + sizeof(bx)], t[32];
 	bignum256 z1;
 
 	memcpy(bx, priv_key, 32);
@@ -294,7 +293,7 @@ void ecdsa_get_public_key65(const uint8_t *priv_key, uint8_t *pub_key)
 	bn_write_be(&R.y, pub_key + 33);
 }
 
-static const char code_[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+static const char code[] = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 void ecdsa_get_address(const uint8_t *pub_key, char version, char *addr)
 {
@@ -319,7 +318,7 @@ void ecdsa_get_address(const uint8_t *pub_key, char version, char *addr)
 
 	while (!bn_is_zero(&c)) {
 		bn_divmod58(&c, &r);
-		*p = code_[r];
+		*p = code[r];
 		p++;
 	}
 
@@ -360,7 +359,7 @@ void ecdsa_get_address_from_ripemd(const uint8_t *b, char *addr)
 
     while (!bn_is_zero(&c)) {
         bn_divmod58(&c, &r);
-        *p = code_[r];
+        *p = code[r];
         p++;
     }
 
