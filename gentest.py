@@ -49,4 +49,8 @@ for i in xrange(200):
     
 print repr(f.read(64))
 
+print repr(f.read(64))
+print repr(f.read(64))
+print repr(f.read(64))
+
 f.close()

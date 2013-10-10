@@ -12,7 +12,8 @@ SOURCES += main.c \
     ecdsa.c \
     bignum.c \
     pbkdf2.c \
-    scrypt.c
+    scrypt.c \
+    salsa20.c
 
 HEADERS += \
     types.h \
@@ -24,5 +25,6 @@ HEADERS += \
     ecdsa.h \
     bignum.h \
     pbkdf2.h \
-    scrypt.h
+    scrypt.h \
+    salsa20.h
 
