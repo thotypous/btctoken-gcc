@@ -11,7 +11,8 @@ SOURCES += main.c \
     hmac.c \
     ecdsa.c \
     bignum.c \
-    pbkdf2.c
+    pbkdf2.c \
+    scrypt.c
 
 HEADERS += \
     types.h \
@@ -22,5 +23,6 @@ HEADERS += \
     hmac.h \
     ecdsa.h \
     bignum.h \
-    pbkdf2.h
+    pbkdf2.h \
+    scrypt.h
 
