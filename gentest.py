@@ -42,7 +42,11 @@ for i in xrange(200):
         break
     w('Blk1'+hdr[:36])
     w('Blk2'+hdr[36:])
-
+    recved = f.read(64)
+    print repr(recved)
+    if recved.startswith('Trusted'):
+        break
+    
 print repr(f.read(64))
 
 f.close()
