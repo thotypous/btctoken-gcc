@@ -10,7 +10,8 @@ SOURCES += main.c \
     rand.c \
     hmac.c \
     ecdsa.c \
-    bignum.c
+    bignum.c \
+    pbkdf2.c
 
 HEADERS += \
     types.h \
@@ -20,5 +21,6 @@ HEADERS += \
     rand.h \
     hmac.h \
     ecdsa.h \
-    bignum.h
+    bignum.h \
+    pbkdf2.h
 
