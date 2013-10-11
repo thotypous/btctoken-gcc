@@ -1,12 +1,16 @@
 import struct, time, thread, sys, socket, os
 from binascii import unhexlify, hexlify
 from decimal import Decimal
-import pyudev
-from electrum import Wallet, Interface, WalletVerifier, SimpleConfig, WalletSynchronizer, Transaction, bitcoin, util
+
+from electrum import Wallet, Interface, WalletVerifier, SimpleConfig
+from electrum import WalletSynchronizer, Transaction, bitcoin, util
+import ecdsa, pyudev
+
 
 dest_addr = '1Ee7G1y5odBa93CTtfDgFxcxQHmiwcYRNw'
 tx_amount = Decimal('0.1')
 assert bitcoin.is_valid(dest_addr)
+
 
 def find_usbid(dev):
     """Walk pyudev device parents until USB idVendor and idProduct
@@ -37,17 +41,18 @@ def wait_dev(vendor, product, subsystem='hidraw'):
                 print('USB ID matches the expected one')
                 return dev
 
+
 class BTCToken:
     def __init__(self):
         print 'waiting for the device to be plugged'
         udev_dev = wait_dev(0xffff, 0x0bad)
         self.dev = open(udev_dev.device_node, 'r+b', buffering=0)
     def send(self, packet):
-        print 'send:', repr(packet)
+        #print 'send:', repr(packet)
         self.dev.write('\x00' + packet.ljust(64, '\x00'))
     def recv(self):
         packet = self.dev.read(64)
-        print 'recv:', repr(packet)
+        #print 'recv:', repr(packet)
         return packet
     def ask_pubkey(self):
         self.send('BTCToken')
@@ -91,13 +96,17 @@ class BTCToken:
         for i in xrange(num_dbg):
             print repr(self.recv())
 
+
 btctoken = BTCToken()
 orig_pubkey = btctoken.ask_pubkey()
 orig_addr = bitcoin.public_key_to_bc_address(orig_pubkey)
-print 'Costumer bitcoin address:', orig_addr
+
+print '\n\nCostumer bitcoin address:', orig_addr, '\n'
+
 
 interface = Interface({'server':'electrum.no-ip.org:50002:s'})
 interface.start()
+
 
 wallet_config = SimpleConfig({
     'wallet_path': os.path.join('cache','%s.wallet'%orig_addr)
@@ -131,11 +140,13 @@ synchronizer.start()
 verifier.start()
 wallet.update()
 
+
 print '\n\n'
 print 'balance:', repr(map(util.format_satoshis, wallet.get_balance()))
 print '\n\n'
 
 wallet_config.save()
+
 
 tx_amount = int(tx_amount*Decimal('1e8'))  # from BTC to Satoshi
 raw_tx = wallet.mktx([(dest_addr, tx_amount)], None, None, orig_addr, None)
@@ -144,6 +155,7 @@ print repr(raw_tx.deserialize())
 btctoken.send_tx(unhexlify(raw_tx.raw))
 btctoken.recv_ok()
 print '\n\n'
+
 
 for tx_in in raw_tx.inputs:
     tx_hash = tx_in['tx_hash']
@@ -174,19 +186,41 @@ for tx_in in raw_tx.inputs:
         btctoken.recv_ok()
     print '\n\n'
 
+
 print 'debugging info'
 btctoken.recv_dbg(3)
 print '\n\n'
 
-for i in range(len(raw_tx.inputs)):
-    tx_for_sig = raw_tx.serialize( raw_tx.inputs, raw_tx.outputs, for_sig = i )
-    print 'tx_for_sig:', tx_for_sig
-    tx_for_sig_hash = bitcoin.Hash(unhexlify(tx_for_sig))
-    print 'tx_for_sig_hash:', hexlify(tx_for_sig_hash)
-print '\n\n'
+
+verifying_key = bitcoin.ecdsa.VerifyingKey.from_string(orig_pubkey[1:], curve=bitcoin.SECP256k1)
 
 # get signatures from device
 print 'should now get', len(raw_tx.inputs), 'signatures'
 for i in xrange(len(raw_tx.inputs)):
-    print 'sig:', hexlify(btctoken.recv())
-# broadcast to network using wallet.sendtx(Transaction(hex_string))
+    sig = btctoken.recv()
+    print 'sig:', hexlify(sig)
+    
+    # convert signature to DER format
+    r,s = ecdsa.util.sigdecode_string(sig, bitcoin.SECP256k1.order)
+    sig = ecdsa.util.sigencode_der(r,s, bitcoin.SECP256k1.order)
+    
+    # check if signature is valid
+    tx_for_sig = raw_tx.serialize(raw_tx.inputs, raw_tx.outputs, for_sig = i)
+    tx_for_sig_hash = bitcoin.Hash(unhexlify(tx_for_sig))
+    assert(verifying_key.verify_digest(sig, tx_for_sig_hash, sigdecode = ecdsa.util.sigdecode_der))
+    
+    # copy to transaction
+    raw_tx.inputs[i]['pubkeysig'] = [(orig_pubkey, sig)]
+
+print '\n\n'    
+
+    
+# now we have a complete (signed) transaction
+raw_tx.is_complete = True
+raw_tx.raw = raw_tx.serialize(raw_tx.inputs, raw_tx.outputs)
+
+print 'complete tx:', raw_tx.raw
+print '\n\n'
+
+
+# TODO: broadcast to network using wallet.sendtx(raw_tx)
